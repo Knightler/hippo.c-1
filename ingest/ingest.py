@@ -1,109 +1,81 @@
-from typing import List, Optional
+from typing import Iterable
 
-from ingest.extractors import HybridExtractor, LLMExtractor, RulesExtractor
-from ingest.learning import FeedbackManager, PatternManager
-from ingest.models import Fact, PromptBatch
-from ingest.store import StoreClient
+from ingest.infer import LLMExtractor
+from ingest.match import HashEmbedder, retrieve_candidates
+from ingest.memory import MemoryStore
+from ingest.models import MemoryUpdate, Prompt
+from ingest.triage import PatternLibrary, triage
+from ingest.update import MemoryUpdater
 
 
 class IngestEngine:
-    """Main entry point for the ingest system
+    """Selective ingest engine with incremental learning."""
 
-    This engine coordinates the extraction pipeline and storage layer:
-    - Runs hybrid extraction (rules + LLM)
-    - Applies learning patterns
-    - Sends facts to store
-    - Handles feedback to improve extraction
-    """
+    def __init__(self):
+        self.memory = MemoryStore()
+        self.patterns = PatternLibrary()
+        self.embedder = HashEmbedder()
+        self.llm = LLMExtractor()
+        self.updater = MemoryUpdater(self.embedder)
 
-    def __init__(
-        self,
-        store_client: StoreClient,
-        learning_enabled: bool = True,
-        llm_model: str = "gpt-3.5-turbo",
-        llm_threshold: float = 0.6,
-    ):
-        """Initialize the ingest engine
+    def process(self, prompts: Iterable[Prompt]) -> list[MemoryUpdate]:
+        updates: list[MemoryUpdate] = []
+        for prompt in prompts:
+            updates.extend(self._process_prompt(prompt))
+        self.memory.save()
+        return updates
 
-        Args:
-            store_client: Store interface for persistence
-            learning_enabled: Enable pattern learning system
-            llm_model: LLM model name for extraction
-            llm_threshold: Confidence threshold for LLM fallback
-        """
-        self.store = store_client
-        self.learning_enabled = learning_enabled
-
-        self.rules_extractor = RulesExtractor()
-        self.llm_extractor = LLMExtractor(model_name=llm_model)
-        self.hybrid_extractor = HybridExtractor(
-            rules_extractor=self.rules_extractor,
-            llm_extractor=self.llm_extractor,
-            llm_threshold=llm_threshold,
+    def _process_prompt(self, prompt: Prompt) -> list[MemoryUpdate]:
+        triage_result = triage(prompt, self.patterns)
+        candidates = retrieve_candidates(
+            prompt.text, triage_result.terms, self.memory, self.embedder
         )
 
-        self.pattern_manager: Optional[PatternManager] = None
-        self.feedback_manager: Optional[FeedbackManager] = None
+        cheap = self._cheap_extract(prompt, triage_result)
+        llm_facts = []
 
-        if learning_enabled:
-            self.pattern_manager = PatternManager()
-            self.pattern_manager.apply_to_extractor(self.rules_extractor)
-            self.feedback_manager = FeedbackManager(self.pattern_manager)
+        if triage_result.should_infer and self.llm.enabled():
+            context = _build_context(candidates, self.memory)
+            llm_facts = self.llm.extract(prompt.text, context)
 
-    def process(self, prompts: PromptBatch) -> List[str]:
-        """Process a batch of prompts and store extracted facts
+        extracted = _dedupe(cheap + llm_facts)
+        updates = self.updater.apply(prompt, extracted, self.memory)
 
-        Args:
-            prompts: Batch of prompts to process
+        for item in extracted:
+            if item.get("pattern"):
+                self.patterns.record(item["pattern"], success=True)
 
-        Returns:
-            List of stored fact IDs
-        """
-        facts = self.hybrid_extractor.extract(prompts)
-        return self.store.save_facts(facts)
+        return updates
 
-    def provide_feedback(
-        self,
-        fact: Fact,
-        correction: Optional[str] = None,
-        positive: bool = False,
-        negative: bool = False,
-    ) -> Optional[dict]:
-        """Provide feedback to improve extraction
+    def _cheap_extract(self, prompt: Prompt, triage_result) -> list[dict]:
+        items = self.patterns.match(prompt.text)
+        label_name = triage_result.terms[0] if triage_result.terms else "general"
+        for item in items:
+            item["label"] = label_name
+            item["source"] = "pattern"
+        return items
 
-        Args:
-            fact: The fact being reviewed
-            correction: Corrected content if applicable
-            positive: True if fact is confirmed correct
-            negative: True if fact is incorrect (no correction)
 
-        Returns:
-            Feedback result or None if learning disabled
-        """
-        if not self.feedback_manager:
-            return None
+def _dedupe(items: list[dict]) -> list[dict]:
+    seen = set()
+    result = []
+    for item in items:
+        key = (item.get("content", "").lower(), item.get("category", "fact"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(item)
+    return result
 
-        if correction:
-            return self.feedback_manager.add_correction(fact, correction)
-        if positive:
-            return self.feedback_manager.add_positive_feedback(fact)
-        if negative:
-            return self.feedback_manager.add_negative_feedback(fact)
 
-        return None
-
-    def get_stats(self) -> dict:
-        """Get ingest system statistics
-
-        Returns:
-            Dictionary with extractor and learning stats
-        """
-        stats = {
-            "llm_threshold": self.hybrid_extractor.get_threshold(),
-            "learning_enabled": self.learning_enabled,
-        }
-
-        if self.pattern_manager:
-            stats["patterns"] = self.pattern_manager.get_stats()
-
-        return stats
+def _build_context(candidates, memory: MemoryStore) -> list[dict]:
+    context = []
+    for cand in candidates:
+        facts = memory.get_facts_by_label(cand.label_id)
+        context.append(
+            {
+                "label": cand.label_name,
+                "facts": [f.content for f in facts[:3]],
+            }
+        )
+    return context
