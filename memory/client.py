@@ -19,6 +19,12 @@ class MemoryClient:
         register_vector(conn)
         return conn
 
+    def ping(self) -> bool:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("select 1")
+                return cur.fetchone() == (1,)
+
     def upsert_prompt(self, prompt: Prompt) -> str:
         with self._connect() as conn:
             with conn.cursor() as cur:
