@@ -1,0 +1,12 @@
+[project]
+name = "hippo-c-1"
+version = "0.1.0"
+description = "AI memory system with ingest, store, and index layers"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic>=2.0.0",
+    "langchain>=0.1.0",
+    "langchain-openai>=0.0.5",
+    "langchain-core>=0.1.0",
+]
