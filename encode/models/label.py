@@ -9,6 +9,7 @@ class Label:
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     kind: str = "topic"
+    category: str = "topic"
     embedding: list[float] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)

@@ -12,6 +12,7 @@ class Fact:
     category: str = "fact"
     confidence: float = 0.5
     source_role: str = "user"
+    embedding: list[float] = field(default_factory=list)
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
     last_seen_at: datetime = field(default_factory=datetime.utcnow)

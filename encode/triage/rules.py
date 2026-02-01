@@ -1,8 +1,8 @@
 import re
 from dataclasses import dataclass
 
-from ingest.models import Prompt
-from ingest.triage.patterns import PatternLibrary
+from encode.models import Prompt
+from encode.triage.patterns import PatternLibrary
 
 
 @dataclass

@@ -1,35 +1,33 @@
 from typing import Iterable
 
-from ingest.infer import LLMExtractor
-from ingest.match import HashEmbedder, retrieve_candidates
-from ingest.memory import MemoryStore
-from ingest.models import MemoryUpdate, Prompt
-from ingest.triage import PatternLibrary, triage
-from ingest.update import MemoryUpdater
+from encode.infer import LLMExtractor
+from encode.match import HashEmbedder, retrieve_candidates
+from encode.models import MemoryUpdate, Prompt
+from encode.triage import PatternLibrary, triage
+from encode.update import MemoryUpdater
+from memory import MemoryClient
 
 
-class IngestEngine:
-    """Selective ingest engine with incremental learning."""
+class EncodeEngine:
+    """Selective encode engine with incremental learning."""
 
     def __init__(self):
-        self.memory = MemoryStore()
-        self.patterns = PatternLibrary()
+        self.memory = MemoryClient()
+        self.patterns = PatternLibrary(self.memory)
         self.embedder = HashEmbedder()
         self.llm = LLMExtractor()
-        self.updater = MemoryUpdater(self.embedder)
+        self.updater = MemoryUpdater(self.embedder, self.memory)
 
     def process(self, prompts: Iterable[Prompt]) -> list[MemoryUpdate]:
         updates: list[MemoryUpdate] = []
         for prompt in prompts:
+            self.memory.upsert_prompt(prompt)
             updates.extend(self._process_prompt(prompt))
-        self.memory.save()
         return updates
 
     def _process_prompt(self, prompt: Prompt) -> list[MemoryUpdate]:
         triage_result = triage(prompt, self.patterns)
-        candidates = retrieve_candidates(
-            prompt.text, triage_result.terms, self.memory, self.embedder
-        )
+        candidates = retrieve_candidates(prompt.text, self.memory, self.embedder)
 
         cheap = self._cheap_extract(prompt, triage_result)
         llm_facts = []
@@ -68,7 +66,7 @@ def _dedupe(items: list[dict]) -> list[dict]:
     return result
 
 
-def _build_context(candidates, memory: MemoryStore) -> list[dict]:
+def _build_context(candidates, memory: MemoryClient) -> list[dict]:
     context = []
     for cand in candidates:
         facts = memory.get_facts_by_label(cand.label_id)
