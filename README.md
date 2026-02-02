@@ -10,7 +10,13 @@ Minimal memory system (encode + memory). Local Postgres by default.
 ./scripts/local_db.sh
 ```
 
-2) Create a venv and install deps:
+2) Create `.env`:
+
+```bash
+cp .env.example .env
+```
+
+3) Create a venv and install deps:
 
 ```bash
 python -m venv .venv
@@ -18,19 +24,19 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
-3) Run the interactive prompt:
+4) Run the interactive prompt:
 
 ```bash
 python main.py chat
 ```
 
-4) Watch live logs:
+5) Watch live logs:
 
 ```bash
 python main.py logs --follow
 ```
 
-5) Watch live memory changes:
+6) Watch live memory changes:
 
 ```bash
 python main.py watch
