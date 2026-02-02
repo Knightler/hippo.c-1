@@ -321,6 +321,34 @@ class MemoryClient:
             for r in rows
         ]
 
+    def list_patterns(self, limit: int = 50) -> list[dict]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select id, regex, category, template, weight, uses, successes, updated_at, metadata
+                    from patterns
+                    order by updated_at desc
+                    limit %s
+                    """,
+                    (limit,),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]),
+                "regex": r[1],
+                "category": r[2],
+                "template": r[3],
+                "weight": r[4],
+                "uses": r[5],
+                "successes": r[6],
+                "updated_at": r[7],
+                "metadata": r[8],
+            }
+            for r in rows
+        ]
+
     def upsert_pattern(self, regex: str, category: str, template: str, weight: float) -> None:
         with self._connect() as conn:
             with conn.cursor() as cur:

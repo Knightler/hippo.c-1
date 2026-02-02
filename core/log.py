@@ -12,7 +12,7 @@ def log(level: str, event: str, **fields: object) -> None:
     }
     line = json.dumps(payload, separators=(",", ":"))
     print(line)
-    log_file = os.getenv("HIPPO_LOG_FILE", "")
-    if log_file:
+    log_file = os.getenv("HIPPO_LOG_FILE", ".hippo.log")
+    if log_file and log_file.lower() not in {"off", "none", "0"}:
         with open(log_file, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
