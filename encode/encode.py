@@ -136,7 +136,11 @@ def _split_clauses(text: str) -> list[str]:
         chunk = chunk.strip()
         if not chunk:
             continue
-        parts = re.split(r"\s+(?:and|but|because|so|which|that)\s+", chunk, flags=re.IGNORECASE)
+        parts = re.split(
+            r"\s+(?:and|but|because|so|which|that)\s+(?=(?:i|my|i\s+am|i\s+was|i\s+have|i\s+do|i'm|im)\b)",
+            chunk,
+            flags=re.IGNORECASE,
+        )
         for part in parts:
             part = part.strip(" ,;:\t\n\r")
             if part:
@@ -169,7 +173,7 @@ def _normalize_fact(content: str, max_words: int = 16, min_words: int = 2) -> st
     text = content.strip().lower()
     if not text:
         return None
-    text = re.split(r"\s+(?:and|but|because|so|which|that)\s+", text)[0]
+    text = re.split(r"\s+(?:but|because|so|which|that)\s+", text)[0]
     text = text.strip(" ,;:\t\n\r")
     text = re.sub(r"\b(really|just|actually|basically|literally)\b", "", text).strip()
     text = re.sub(r"\s+", " ", text)
@@ -194,14 +198,14 @@ def _semantic_extract_clause(clause: str) -> list[dict]:
         (r"^i\s+am\s+always\s+(.+)$", "habit", "always {0}", "object"),
         (r"^i\s+always\s+(.+)$", "habit", "always {0}", "object"),
         (r"^i\s+feel\s+(.+)$", "emotion", "feels {0}", "fixed"),
-        (r"^i\s+like\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+love\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+loved\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+enjoy\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+prefer\s+(.+)$", "preference", "prefers {0}", "object"),
-        (r"^i\s+dislike\s+(.+)$", "preference", "dislikes {0}", "object"),
-        (r"^i\s+hate\s+(.+)$", "preference", "dislikes {0}", "object"),
-        (r"^i\s+hated\s+(.+)$", "preference", "dislikes {0}", "object"),
+        (r"^i\s+(?:really\s+)?like\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+(?:really\s+)?love\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+(?:really\s+)?loved\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+(?:really\s+)?enjoy\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+(?:really\s+)?prefer\s+(.+)$", "preference", "prefers {0}", "object"),
+        (r"^i\s+(?:really\s+)?dislike\s+(.+)$", "preference", "dislikes {0}", "object"),
+        (r"^i\s+(?:really\s+)?hate\s+(.+)$", "preference", "dislikes {0}", "object"),
+        (r"^i\s+(?:really\s+)?hated\s+(.+)$", "preference", "dislikes {0}", "object"),
         (r"^i\s+want\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
         (r"^i\s+plan\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
         (r"^i\s+aim\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
