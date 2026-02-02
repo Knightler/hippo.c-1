@@ -7,6 +7,15 @@ import time
 from core import log
 
 
+def _handle_missing_dep(exc: Exception) -> bool:
+    if isinstance(exc, ModuleNotFoundError):
+        name = exc.name or "dependency"
+        print(f"missing dependency: {name}")
+        print("activate venv and run: python -m pip install -e .")
+        return True
+    return False
+
+
 def _read_stdin() -> str:
     data = sys.stdin.read()
     return data.strip()
@@ -44,6 +53,8 @@ def _encode(texts: list[str], role) -> None:
         updates = engine.process(prompts)
         print(f"encoded updates={len(updates)}")
     except Exception as exc:
+        if _handle_missing_dep(exc):
+            return
         log("error", "encode_failed", error=type(exc).__name__, message=str(exc))
         print(f"encode failed: {exc}")
 
@@ -66,6 +77,8 @@ def _labels(limit: int) -> None:
                 }
             )
     except Exception as exc:
+        if _handle_missing_dep(exc):
+            return
         print(f"inspect labels failed: {exc}")
     finally:
         if client:
@@ -80,6 +93,8 @@ def _facts_latest(limit: int) -> None:
         for fact in client.list_latest_facts(limit=limit):
             _print_json(fact)
     except Exception as exc:
+        if _handle_missing_dep(exc):
+            return
         print(f"inspect facts failed: {exc}")
     finally:
         if client:
@@ -94,6 +109,8 @@ def _facts_by_label(label: str, limit: int) -> None:
         for fact in client.list_facts_by_label(label, limit=limit):
             _print_json(fact)
     except Exception as exc:
+        if _handle_missing_dep(exc):
+            return
         print(f"inspect facts failed: {exc}")
     finally:
         if client:
@@ -178,6 +195,8 @@ def _watch_memory(
         from memory import MemoryClient
         client = MemoryClient()
     except Exception as exc:
+        if _handle_missing_dep(exc):
+            return
         print(f"watch failed: {exc}")
         return
     seen_facts: set[tuple[str, object]] = set()
