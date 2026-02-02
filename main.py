@@ -14,6 +14,25 @@ def _read_stdin() -> str:
     return data.strip()
 
 
+def _load_env() -> None:
+    if os.getenv("SUPABASE_DATABASE_URL"):
+        return
+    if not os.path.exists(".env"):
+        return
+    with open(".env", "r", encoding="utf-8") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip("\"")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
 def _print_json(item: object) -> None:
     print(json.dumps(item, default=str, separators=(",", ":")))
 
@@ -186,6 +205,7 @@ def _watch_memory(
 
 
 def main() -> None:
+    _load_env()
     parser = argparse.ArgumentParser(description="hippo.c-1")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
