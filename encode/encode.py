@@ -6,6 +6,7 @@ from encode.models import MemoryUpdate, Prompt
 from encode.triage import PatternLibrary, triage
 from encode.update import MemoryUpdater
 from memory import MemoryClient
+from core import log
 
 
 class EncodeEngine:
@@ -20,9 +21,12 @@ class EncodeEngine:
 
     def process(self, prompts: Iterable[Prompt]) -> list[MemoryUpdate]:
         updates: list[MemoryUpdate] = []
+        count = 0
         for prompt in prompts:
+            count += 1
             self.memory.upsert_prompt(prompt)
             updates.extend(self._process_prompt(prompt))
+        log("info", "encode_done", prompts=count, updates=len(updates))
         return updates
 
     def _process_prompt(self, prompt: Prompt) -> list[MemoryUpdate]:

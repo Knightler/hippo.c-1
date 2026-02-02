@@ -2,6 +2,8 @@ import json
 import os
 import urllib.request
 
+from core import log
+
 
 class LLMExtractor:
     """Optional LLM extraction using an OpenAI-compatible API.
@@ -47,8 +49,9 @@ class LLMExtractor:
             with urllib.request.urlopen(req, timeout=20) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
             content = body["choices"][0]["message"]["content"]
-            return json.loads(content)
-        except Exception:
+            return _validate_items(_safe_json_loads(content))
+        except Exception as exc:
+            log("error", "llm_extract_failed", error=type(exc).__name__, message=str(exc))
             return []
 
 
@@ -62,3 +65,29 @@ def _system_prompt() -> str:
 
 def _user_prompt(text: str, context: list[dict]) -> str:
     return json.dumps({"text": text, "candidates": context})
+
+
+def _safe_json_loads(raw: str) -> object:
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        log("error", "llm_parse_failed", error=type(exc).__name__, message=str(exc))
+        return []
+
+
+def _validate_items(data: object) -> list[dict]:
+    if not isinstance(data, list):
+        log("error", "llm_invalid_payload", reason="not_list")
+        return []
+    valid: list[dict] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        category = item.get("category")
+        label = item.get("label")
+        if isinstance(content, str) and isinstance(category, str) and isinstance(label, str):
+            valid.append(item)
+    if not valid and data:
+        log("error", "llm_invalid_payload", reason="no_valid_items")
+    return valid

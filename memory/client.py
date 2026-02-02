@@ -1,6 +1,8 @@
 import os
 
 import psycopg
+from psycopg_pool import ConnectionPool
+from contextlib import contextmanager
 from pgvector.psycopg import register_vector
 
 from encode.models import Fact, Label, Prompt
@@ -13,11 +15,13 @@ class MemoryClient:
         self.dsn = os.getenv(dsn_env, "")
         if not self.dsn:
             raise ValueError("SUPABASE_DATABASE_URL is not set")
+        self.pool = ConnectionPool(self.dsn, min_size=1, max_size=5, timeout=10)
 
+    @contextmanager
     def _connect(self):
-        conn = psycopg.connect(self.dsn)
-        register_vector(conn)
-        return conn
+        with self.pool.connection() as conn:
+            register_vector(conn)
+            yield conn
 
     def ping(self) -> bool:
         with self._connect() as conn:
@@ -159,6 +163,91 @@ class MemoryClient:
                 evidence_count=r[10],
                 metadata=r[11],
             )
+            for r in rows
+        ]
+
+    def list_labels(self, limit: int = 50) -> list[Label]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select id, name, kind, category, embedding, usage_count, created_at, updated_at, metadata
+                    from labels
+                    order by updated_at desc
+                    limit %s
+                    """,
+                    (limit,),
+                )
+                rows = cur.fetchall()
+        return [
+            Label(
+                id=str(r[0]),
+                name=r[1],
+                kind=r[2],
+                category=r[3],
+                embedding=list(r[4]) if r[4] else [],
+                usage_count=r[5],
+                created_at=r[6],
+                updated_at=r[7],
+                metadata=r[8],
+            )
+            for r in rows
+        ]
+
+    def list_latest_facts(self, limit: int = 20) -> list[dict]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select f.id, f.content, f.category, f.confidence, f.last_seen_at, f.created_at,
+                           l.name as label_name
+                    from facts f
+                    join labels l on l.id = f.label_id
+                    order by f.last_seen_at desc
+                    limit %s
+                    """,
+                    (limit,),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]),
+                "content": r[1],
+                "category": r[2],
+                "confidence": r[3],
+                "last_seen_at": r[4],
+                "created_at": r[5],
+                "label": r[6],
+            }
+            for r in rows
+        ]
+
+    def list_facts_by_label(self, label_name: str, limit: int = 20) -> list[dict]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select f.id, f.content, f.category, f.confidence, f.last_seen_at, f.created_at,
+                           l.name as label_name
+                    from facts f
+                    join labels l on l.id = f.label_id
+                    where l.name = %s
+                    order by f.confidence desc, f.last_seen_at desc
+                    limit %s
+                    """,
+                    (label_name, limit),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]),
+                "content": r[1],
+                "category": r[2],
+                "confidence": r[3],
+                "last_seen_at": r[4],
+                "created_at": r[5],
+                "label": r[6],
+            }
             for r in rows
         ]
 

@@ -16,9 +16,16 @@ def retrieve_candidates(
     memory: MemoryClient,
     embedder: HashEmbedder,
     top_k: int = 5,
+    min_score: float = 0.2,
 ) -> list[Candidate]:
     query_vec = embedder.embed(text)
     labels = memory.search_labels(query_vec, top_k=top_k)
-    return [
-        Candidate(label_id=l.id, label_name=l.name, score=1.0) for l in labels
-    ]
+    candidates: list[Candidate] = []
+    for label in labels:
+        score = embedder.similarity(query_vec, label.embedding)
+        if score < min_score:
+            continue
+        candidates.append(
+            Candidate(label_id=label.id, label_name=label.name, score=score)
+        )
+    return candidates

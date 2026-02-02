@@ -25,7 +25,7 @@ class MemoryUpdater:
             label = memory.upsert_label(
                 name=item.get("label", "general"),
                 kind="topic",
-                category=item.get("category", "fact"),
+                category="topic",
                 embedding=self.embedder.embed(item.get("label", "general")),
             )
             content_embedding = self.embedder.embed(item["content"])
