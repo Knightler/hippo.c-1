@@ -46,7 +46,7 @@ def _print_json(item: object) -> None:
 
 def _encode(texts: list[str], role) -> None:
     try:
-        from encode import EncodeEngine
+        from encode.encode import EncodeEngine
         from encode.models import Prompt
         prompts = [Prompt(text=t, role=role) for t in texts]
         engine = EncodeEngine()
