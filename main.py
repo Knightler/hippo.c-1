@@ -44,6 +44,17 @@ def _print_json(item: object) -> None:
     print(json.dumps(item, default=str, separators=(",", ":")))
 
 
+def _print_fact_pretty(fact: dict) -> None:
+    label = fact.get("label", "")
+    content = fact.get("content", "")
+    category = fact.get("category", "")
+    confidence = fact.get("confidence", "")
+    if label:
+        print(f"[{category}] {content} | label={label} | conf={confidence}")
+    else:
+        print(f"[{category}] {content} | conf={confidence}")
+
+
 def _encode(texts: list[str], role) -> None:
     try:
         from encode.encode import EncodeEngine
@@ -85,13 +96,16 @@ def _labels(limit: int) -> None:
             client.close()
 
 
-def _facts_latest(limit: int) -> None:
+def _facts_latest(limit: int, pretty: bool) -> None:
     client = None
     try:
         from memory import MemoryClient
         client = MemoryClient()
         for fact in client.list_latest_facts(limit=limit):
-            _print_json(fact)
+            if pretty:
+                _print_fact_pretty(fact)
+            else:
+                _print_json(fact)
     except Exception as exc:
         if _handle_missing_dep(exc):
             return
@@ -101,13 +115,16 @@ def _facts_latest(limit: int) -> None:
             client.close()
 
 
-def _facts_by_label(label: str, limit: int) -> None:
+def _facts_by_label(label: str, limit: int, pretty: bool) -> None:
     client = None
     try:
         from memory import MemoryClient
         client = MemoryClient()
         for fact in client.list_facts_by_label(label, limit=limit):
-            _print_json(fact)
+            if pretty:
+                _print_fact_pretty(fact)
+            else:
+                _print_json(fact)
     except Exception as exc:
         if _handle_missing_dep(exc):
             return
@@ -188,6 +205,7 @@ def _watch_memory(
     watch_patterns: bool,
     interval: float,
     initial: bool,
+    pretty: bool,
 ) -> None:
     client = None
     last_error = ""
@@ -208,7 +226,10 @@ def _watch_memory(
             for fact in client.list_latest_facts(limit=200):
                 seen_facts.add((fact["id"], fact["last_seen_at"]))
                 if initial:
-                    _print_json(fact)
+                    if pretty:
+                        _print_fact_pretty(fact)
+                    else:
+                        _print_json(fact)
         if watch_labels:
             for label in client.list_labels(limit=200):
                 seen_labels.add((label.id, label.updated_at))
@@ -243,7 +264,10 @@ def _watch_memory(
                         key = (fact["id"], fact["last_seen_at"])
                         if key not in seen_facts:
                             seen_facts.add(key)
-                            _print_json(fact)
+                            if pretty:
+                                _print_fact_pretty(fact)
+                            else:
+                                _print_json(fact)
                 if watch_labels:
                     for label in client.list_labels(limit=200):
                         key = (label.id, label.updated_at)
@@ -302,6 +326,7 @@ def main() -> None:
     facts_parser.add_argument("--latest", type=int, default=0)
     facts_parser.add_argument("--label", type=str, default="")
     facts_parser.add_argument("--limit", type=int, default=20)
+    facts_parser.add_argument("--pretty", action="store_true")
 
     logs_parser = sub.add_parser("logs")
     logs_parser.add_argument("--limit", type=int, default=200)
@@ -313,6 +338,7 @@ def main() -> None:
     watch_parser.add_argument("--patterns", action="store_true")
     watch_parser.add_argument("--interval", type=float, default=0.5)
     watch_parser.add_argument("--initial", action="store_true")
+    watch_parser.add_argument("--pretty", action="store_true")
 
     args = parser.parse_args()
 
@@ -339,10 +365,10 @@ def main() -> None:
             return
         if args.inspect_cmd == "facts":
             if args.latest:
-                _facts_latest(limit=args.latest)
+                _facts_latest(limit=args.latest, pretty=args.pretty)
                 return
             if args.label:
-                _facts_by_label(label=args.label, limit=args.limit)
+                _facts_by_label(label=args.label, limit=args.limit, pretty=args.pretty)
                 return
             facts_parser.error("facts requires --latest or --label")
         return
@@ -364,6 +390,7 @@ def main() -> None:
             watch_patterns=watch_patterns,
             interval=args.interval,
             initial=args.initial,
+            pretty=args.pretty,
         )
         return
 
