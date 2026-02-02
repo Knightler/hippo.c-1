@@ -56,8 +56,8 @@ class PatternLibrary:
 
     def _seed_defaults(self) -> None:
         defaults = [
-            Pattern(r"i (?:really )?(?:like|love|enjoy|prefer) (.+?)(?:\.|$)", "preference", "likes {0}", 0.6, "object"),
-            Pattern(r"i (?:really )?(?:hate|dislike|detest|can't stand) (.+?)(?:\.|$)", "preference", "dislikes {0}", 0.6, "object"),
+            Pattern(r"i (?:really )?(?:like|love|loved|enjoy|prefer) (.+?)(?:\.|$)", "preference", "likes {0}", 0.6, "object"),
+            Pattern(r"i (?:really )?(?:hate|hated|dislike|detest|can't stand) (.+?)(?:\.|$)", "preference", "dislikes {0}", 0.6, "object"),
             Pattern(r"i (?:want|plan|aim) to (.+?)(?:\.|$)", "goal", "wants to {0}", 0.55, "object"),
             Pattern(r"i (?:feel|am feeling|i'm feeling) (.+?)(?:\.|$)", "emotion", "feels {0}", 0.5, "fixed"),
             Pattern(r"my (.+?) (?:is|are) (.+?)(?:\.|$)", "relationship", "{0} is {1}", 0.55, "subject"),
