@@ -202,7 +202,11 @@ def _watch_memory(
                     _print_json(pattern)
 
     try:
-        load_initial()
+        try:
+            load_initial()
+        except Exception as exc:
+            last_error = f"watch error: {exc}"
+            print(last_error)
         while True:
             try:
                 if watch_facts:
