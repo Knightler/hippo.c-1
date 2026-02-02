@@ -57,12 +57,11 @@ def _show_logs(limit: int) -> None:
     if not log_file or log_file.lower() in {"off", "none", "0"}:
         print("logging is disabled")
         return
-    try:
-        with open(log_file, "r", encoding="utf-8") as handle:
-            lines = handle.readlines()
-    except FileNotFoundError:
-        print("log file not found")
-        return
+    if not os.path.exists(log_file):
+        with open(log_file, "a", encoding="utf-8"):
+            pass
+    with open(log_file, "r", encoding="utf-8") as handle:
+        lines = handle.readlines()
     for line in lines[-limit:]:
         print(line.rstrip("\n"))
 
@@ -72,19 +71,19 @@ def _follow_logs(limit: int) -> None:
     if not log_file or log_file.lower() in {"off", "none", "0"}:
         print("logging is disabled")
         return
-    try:
-        with open(log_file, "r", encoding="utf-8") as handle:
-            lines = handle.readlines()
-            for line in lines[-limit:]:
+    if not os.path.exists(log_file):
+        with open(log_file, "a", encoding="utf-8"):
+            pass
+    with open(log_file, "r", encoding="utf-8") as handle:
+        lines = handle.readlines()
+        for line in lines[-limit:]:
+            print(line.rstrip("\n"))
+        while True:
+            line = handle.readline()
+            if line:
                 print(line.rstrip("\n"))
-            while True:
-                line = handle.readline()
-                if line:
-                    print(line.rstrip("\n"))
-                else:
-                    time.sleep(0.2)
-    except FileNotFoundError:
-        print("log file not found")
+            else:
+                time.sleep(0.2)
 
 
 def _chat() -> None:
