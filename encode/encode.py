@@ -62,13 +62,14 @@ class EncodeEngine:
             normalized = _normalize_fact(item.get("content", ""))
             if not normalized:
                 continue
+            base_label = _derive_label(item)
             for fact in _expand_compound(normalized, item.get("category", "fact")):
                 if not _is_compact_fact(fact["content"]):
                     continue
                 fact["source"] = item.get("source", "pattern")
                 fact["pattern"] = item.get("pattern")
                 fact["confidence"] = item.get("confidence", 0.45)
-                fact["label"] = _derive_label(fact)
+                fact["label"] = _derive_label(fact, fallback=base_label)
                 normalized_items.append(fact)
         return normalized_items
 
@@ -143,7 +144,7 @@ def _split_clauses(text: str) -> list[str]:
     return clauses
 
 
-def _derive_label(item: dict) -> str:
+def _derive_label(item: dict, fallback: str | None = None) -> str:
     mode = item.get("label_mode", "group")
     groups = item.get("groups", [])
     category = item.get("category", "")
@@ -155,6 +156,12 @@ def _derive_label(item: dict) -> str:
         return _normalize_label(groups[0])
     if groups:
         return _normalize_label(groups[0])
+    content = str(item.get("content", "")).lower().strip()
+    label = _label_from_content(content)
+    if label:
+        return label
+    if fallback:
+        return fallback
     return "general"
 
 
@@ -221,30 +228,46 @@ def _semantic_extract_clause(clause: str) -> list[dict]:
 
 
 def _expand_compound(content: str, category: str) -> list[dict]:
-    if " and " not in content:
+    if " " not in content:
         return [{"content": content, "category": category}]
-    parts = [p.strip() for p in content.split(" and ") if p.strip()]
-    if len(parts) < 2:
+    verb, rest = content.split(" ", 1)
+    if not rest:
         return [{"content": content, "category": category}]
-    head = parts[0]
-    if " " not in head:
+    items = _split_list_items(rest)
+    if len(items) <= 1:
         return [{"content": content, "category": category}]
-    verb = head.split(" ")[0]
-    tail = head[len(verb) :].strip()
-    expanded = [{"content": head, "category": category}]
-    for part in parts[1:]:
-        if part.startswith(verb + " "):
-            expanded.append({"content": part, "category": category})
-        else:
-            expanded.append({"content": f"{verb} {part}", "category": category})
-    if tail and len(expanded) > 1:
-        return expanded
-    return [{"content": content, "category": category}]
+    expanded = []
+    for item in items:
+        expanded.append({"content": f"{verb} {item}", "category": category})
+    return expanded
 
 
 def _is_compact_fact(content: str, max_words: int = 12, min_words: int = 2) -> bool:
     words = content.split()
     return min_words <= len(words) <= max_words
+
+
+def _split_list_items(text: str) -> list[str]:
+    parts = re.split(r",|\s+and\s+", text)
+    items = [p.strip(" ,;:\t\n\r") for p in parts if p.strip(" ,;:\t\n\r")]
+    return items
+
+
+def _label_from_content(content: str) -> str | None:
+    patterns = [
+        r"^(?:likes|dislikes|prefers)\s+(.+)$",
+        r"^(?:wants to|needs to)\s+(.+)$",
+        r"^(?:feels)\s+(.+)$",
+        r"^(?:lives in|from|works in|writes in)\s+(.+)$",
+        r"^(?:age is)\s+(.+)$",
+        r"^(.+?)\s+is\s+(.+)$",
+    ]
+    for pattern in patterns:
+        match = re.match(pattern, content)
+        if match:
+            value = match.group(1)
+            return _normalize_label(value)
+    return None
 
 
 def _normalize_label(text: str, max_words: int = 4) -> str:
