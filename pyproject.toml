@@ -5,7 +5,7 @@ description = "AI memory system with ingest, store, and index layers"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "psycopg[binary]>=3.1.18",
+    "psycopg[binary,pool]>=3.1.18",
     "pgvector>=0.2.4",
 ]
 
