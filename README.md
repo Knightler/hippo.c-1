@@ -41,3 +41,15 @@ python -m pip install -e .
 ```bash
 ./hippo watch
 ```
+
+## Optional LLM extraction (DeepSeek)
+
+Set these in `.env` to enable LLM extraction:
+
+```bash
+DEEPSEEK_API_KEY=your_key
+DEEPSEEK_API_BASE=https://api.deepseek.com/v1
+DEEPSEEK_MODEL=deepseek-chat
+```
+
+The pipeline will use the LLM extractor automatically when the key is set.
