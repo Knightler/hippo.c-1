@@ -4,9 +4,7 @@ import os
 import sys
 import time
 
-from encode import EncodeEngine
-from encode.models import Prompt, Role
-from memory import MemoryClient
+from core import log
 
 
 def _read_stdin() -> str:
@@ -37,18 +35,23 @@ def _print_json(item: object) -> None:
     print(json.dumps(item, default=str, separators=(",", ":")))
 
 
-def _encode(texts: list[str], role: Role) -> None:
+def _encode(texts: list[str], role) -> None:
     try:
+        from encode import EncodeEngine
+        from encode.models import Prompt
         prompts = [Prompt(text=t, role=role) for t in texts]
         engine = EncodeEngine()
-        engine.process(prompts)
+        updates = engine.process(prompts)
+        print(f"encoded updates={len(updates)}")
     except Exception as exc:
+        log("error", "encode_failed", error=type(exc).__name__, message=str(exc))
         print(f"encode failed: {exc}")
 
 
 def _labels(limit: int) -> None:
     client = None
     try:
+        from memory import MemoryClient
         client = MemoryClient()
         for label in client.list_labels(limit=limit):
             _print_json(
@@ -72,6 +75,7 @@ def _labels(limit: int) -> None:
 def _facts_latest(limit: int) -> None:
     client = None
     try:
+        from memory import MemoryClient
         client = MemoryClient()
         for fact in client.list_latest_facts(limit=limit):
             _print_json(fact)
@@ -85,6 +89,7 @@ def _facts_latest(limit: int) -> None:
 def _facts_by_label(label: str, limit: int) -> None:
     client = None
     try:
+        from memory import MemoryClient
         client = MemoryClient()
         for fact in client.list_facts_by_label(label, limit=limit):
             _print_json(fact)
@@ -136,6 +141,9 @@ def _chat() -> None:
     while True:
         try:
             text = input("hippo> ").strip()
+        except KeyboardInterrupt:
+            print("\nchat stopped")
+            break
         except EOFError:
             print()
             break
@@ -153,6 +161,7 @@ def _chat() -> None:
             text = "\n".join(lines).strip()
             if not text:
                 continue
+        from encode.models import Role
         _encode([text], role=Role.USER)
 
 
@@ -166,6 +175,7 @@ def _watch_memory(
     client = None
     last_error = ""
     try:
+        from memory import MemoryClient
         client = MemoryClient()
     except Exception as exc:
         print(f"watch failed: {exc}")
@@ -296,6 +306,7 @@ def main() -> None:
         if not texts:
             encode_parser.print_usage()
             return
+        from encode.models import Role
         _encode(texts=texts, role=Role(args.role))
         return
 
