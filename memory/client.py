@@ -4,7 +4,7 @@ import psycopg
 from psycopg_pool import ConnectionPool
 from contextlib import contextmanager
 from psycopg.types.json import Json
-from pgvector.psycopg import register_vector
+from pgvector.psycopg import register_vector, Vector
 
 from encode.models import Fact, Label, Prompt
 
@@ -96,7 +96,7 @@ class MemoryClient:
                     order by embedding <-> %s
                     limit %s
                     """,
-                    (embedding, top_k),
+                    (Vector(embedding), top_k),
                 )
                 rows = cur.fetchall()
         return [
@@ -126,7 +126,7 @@ class MemoryClient:
                     order by embedding <-> %s
                     limit 1
                     """,
-                    (label_id, embedding),
+                    (label_id, Vector(embedding)),
                 )
                 row = cur.fetchone()
         if not row:
