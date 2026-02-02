@@ -3,6 +3,7 @@ import os
 import psycopg
 from psycopg_pool import ConnectionPool
 from contextlib import contextmanager
+from psycopg.types.json import Json
 from pgvector.psycopg import register_vector
 
 from encode.models import Fact, Label, Prompt
@@ -23,6 +24,9 @@ class MemoryClient:
             register_vector(conn)
             yield conn
 
+    def _json(self, value: dict) -> Json:
+        return Json(value)
+
     def close(self) -> None:
         self.pool.close()
 
@@ -42,7 +46,13 @@ class MemoryClient:
                     on conflict (id) do nothing
                     returning id
                     """,
-                    (prompt.id, prompt.role.value, prompt.text, prompt.timestamp, prompt.metadata),
+                    (
+                        prompt.id,
+                        prompt.role.value,
+                        prompt.text,
+                        prompt.timestamp,
+                        self._json(prompt.metadata),
+                    ),
                 )
                 row = cur.fetchone()
                 return str(row[0]) if row else prompt.id
@@ -278,7 +288,7 @@ class MemoryClient:
                         fact.updated_at,
                         fact.last_seen_at,
                         fact.evidence_count,
-                        fact.metadata,
+                        self._json(fact.metadata),
                     ),
                 )
         return fact
