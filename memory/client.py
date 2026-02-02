@@ -392,3 +392,68 @@ class MemoryClient:
                     """,
                     (1 if success else 0, regex),
                 )
+
+    def upsert_learned_pattern(
+        self,
+        signature: str,
+        template: str,
+        category: str,
+        confidence: float,
+        success: bool,
+        metadata: dict,
+    ) -> None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into learned_patterns (
+                        signature, template, category, confidence, uses, successes, updated_at, metadata
+                    )
+                    values (%s, %s, %s, %s, 1, %s, now(), %s)
+                    on conflict (signature)
+                    do update set
+                        confidence = least(1.0, learned_patterns.confidence + %s),
+                        uses = learned_patterns.uses + 1,
+                        successes = learned_patterns.successes + %s,
+                        updated_at = now(),
+                        metadata = learned_patterns.metadata || excluded.metadata
+                    """,
+                    (
+                        signature,
+                        template,
+                        category,
+                        confidence,
+                        1 if success else 0,
+                        self._json(metadata),
+                        confidence * 0.1,
+                        1 if success else 0,
+                    ),
+                )
+
+    def list_learned_patterns(self, limit: int = 50) -> list[dict]:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    select id, signature, template, category, confidence, uses, successes, updated_at, metadata
+                    from learned_patterns
+                    order by updated_at desc
+                    limit %s
+                    """,
+                    (limit,),
+                )
+                rows = cur.fetchall()
+        return [
+            {
+                "id": str(r[0]),
+                "signature": r[1],
+                "template": r[2],
+                "category": r[3],
+                "confidence": r[4],
+                "uses": r[5],
+                "successes": r[6],
+                "updated_at": r[7],
+                "metadata": r[8],
+            }
+            for r in rows
+        ]

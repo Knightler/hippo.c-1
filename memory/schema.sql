@@ -41,6 +41,18 @@ create table if not exists patterns (
   metadata jsonb not null default '{}'::jsonb
 );
 
+create table if not exists learned_patterns (
+  id uuid primary key default gen_random_uuid(),
+  signature text not null unique,
+  template text not null,
+  category text not null,
+  confidence real not null default 0.5,
+  uses integer not null default 0,
+  successes integer not null default 0,
+  updated_at timestamptz not null default now(),
+  metadata jsonb not null default '{}'::jsonb
+);
+
 create table if not exists prompts (
   id uuid primary key default gen_random_uuid(),
   role text not null,
@@ -55,3 +67,4 @@ create index if not exists idx_facts_content_fts on facts using gin (to_tsvector
 
 create index if not exists idx_labels_embedding on labels using ivfflat (embedding vector_l2_ops);
 create index if not exists idx_facts_embedding on facts using ivfflat (embedding vector_l2_ops);
+create index if not exists idx_learned_patterns_category on learned_patterns (category);

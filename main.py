@@ -246,10 +246,15 @@ def _watch_memory(
                         }
                     )
         if watch_patterns:
-            for pattern in client.list_patterns(limit=200):
+            for pattern in client.list_learned_patterns(limit=200):
                 seen_patterns.add((pattern["id"], pattern["updated_at"]))
                 if initial:
-                    _print_json(pattern)
+                    if pretty:
+                        print(
+                            f"[pattern] {pattern['template']} | category={pattern['category']} | conf={pattern['confidence']}"
+                        )
+                    else:
+                        _print_json(pattern)
 
     try:
         try:
@@ -285,11 +290,16 @@ def _watch_memory(
                                 }
                             )
                 if watch_patterns:
-                    for pattern in client.list_patterns(limit=200):
+                    for pattern in client.list_learned_patterns(limit=200):
                         key = (pattern["id"], pattern["updated_at"])
                         if key not in seen_patterns:
                             seen_patterns.add(key)
-                            _print_json(pattern)
+                            if pretty:
+                                print(
+                                    f"[pattern] {pattern['template']} | category={pattern['category']} | conf={pattern['confidence']}"
+                                )
+                            else:
+                                _print_json(pattern)
                 if last_error:
                     last_error = ""
             except Exception as exc:
@@ -327,6 +337,10 @@ def main() -> None:
     facts_parser.add_argument("--label", type=str, default="")
     facts_parser.add_argument("--limit", type=int, default=20)
     facts_parser.add_argument("--pretty", action="store_true")
+
+    patterns_parser = inspect_sub.add_parser("patterns")
+    patterns_parser.add_argument("--limit", type=int, default=50)
+    patterns_parser.add_argument("--pretty", action="store_true")
 
     logs_parser = sub.add_parser("logs")
     logs_parser.add_argument("--limit", type=int, default=200)
@@ -371,6 +385,24 @@ def main() -> None:
                 _facts_by_label(label=args.label, limit=args.limit, pretty=args.pretty)
                 return
             facts_parser.error("facts requires --latest or --label")
+            return
+        if args.inspect_cmd == "patterns":
+            try:
+                from memory import MemoryClient
+                client = MemoryClient()
+                for pattern in client.list_learned_patterns(limit=args.limit):
+                    if args.pretty:
+                        print(
+                            f"[pattern] {pattern['template']} | category={pattern['category']} | conf={pattern['confidence']}"
+                        )
+                    else:
+                        _print_json(pattern)
+                client.close()
+            except Exception as exc:
+                if _handle_missing_dep(exc):
+                    return
+                print(f"inspect patterns failed: {exc}")
+            return
         return
 
     if args.cmd == "logs":
