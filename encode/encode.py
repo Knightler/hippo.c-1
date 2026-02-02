@@ -55,17 +55,22 @@ class EncodeEngine:
     def _cheap_extract(self, prompt: Prompt) -> list[dict]:
         items: list[dict] = []
         for clause in _split_clauses(prompt.text):
+            items.extend(_semantic_extract_clause(clause))
             items.extend(self.patterns.match(clause))
+        normalized_items: list[dict] = []
         for item in items:
             normalized = _normalize_fact(item.get("content", ""))
             if not normalized:
-                item["skip"] = True
                 continue
-            item["content"] = normalized
-            label = _derive_label(item)
-            item["label"] = label
-            item["source"] = "pattern"
-        return [item for item in items if not item.get("skip")]
+            for fact in _expand_compound(normalized, item.get("category", "fact")):
+                if not _is_compact_fact(fact["content"]):
+                    continue
+                fact["source"] = item.get("source", "pattern")
+                fact["pattern"] = item.get("pattern")
+                fact["confidence"] = item.get("confidence", 0.45)
+                fact["label"] = _derive_label(fact)
+                normalized_items.append(fact)
+        return normalized_items
 
     def _learn_patterns(self, text: str, facts: list[dict]) -> None:
         sentences = _split_sentences(text)
@@ -168,6 +173,78 @@ def _normalize_fact(content: str, max_words: int = 16, min_words: int = 2) -> st
         words = words[:max_words]
         text = " ".join(words)
     return text
+
+
+def _semantic_extract_clause(clause: str) -> list[dict]:
+    text = clause.strip()
+    if not text:
+        return []
+    lowered = text.lower()
+    patterns = [
+        (r"^i\s+am\s+(\d{1,3})\b", "identity", "age is {0}", "fixed"),
+        (r"^i\s+am\s+(?:a|an)\s+(.+)$", "identity", "is {0}", "fixed"),
+        (r"^i\s+feel\s+(.+)$", "emotion", "feels {0}", "fixed"),
+        (r"^i\s+like\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+love\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+loved\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+enjoy\s+(.+)$", "preference", "likes {0}", "object"),
+        (r"^i\s+prefer\s+(.+)$", "preference", "prefers {0}", "object"),
+        (r"^i\s+dislike\s+(.+)$", "preference", "dislikes {0}", "object"),
+        (r"^i\s+hate\s+(.+)$", "preference", "dislikes {0}", "object"),
+        (r"^i\s+hated\s+(.+)$", "preference", "dislikes {0}", "object"),
+        (r"^i\s+want\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
+        (r"^i\s+plan\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
+        (r"^i\s+aim\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
+        (r"^i\s+need\s+to\s+(.+)$", "goal", "needs to {0}", "object"),
+        (r"^i\s+live\s+in\s+(.+)$", "location", "lives in {0}", "object"),
+        (r"^i\s+am\s+from\s+(.+)$", "location", "from {0}", "object"),
+        (r"^i\s+work\s+in\s+(.+)$", "work", "works in {0}", "object"),
+        (r"^i\s+write\s+in\s+(.+)$", "style", "writes in {0}", "object"),
+        (r"^my\s+(.+?)\s+(?:is|are)\s+(.+)$", "relationship", "{0} is {1}", "subject"),
+    ]
+    for pattern, category, template, label_mode in patterns:
+        match = re.match(pattern, lowered)
+        if match:
+            content = template.format(*match.groups())
+            return [
+                {
+                    "content": content,
+                    "category": category,
+                    "confidence": 0.55,
+                    "pattern": pattern,
+                    "groups": list(match.groups()),
+                    "label_mode": label_mode,
+                    "source": "semantic",
+                }
+            ]
+    return []
+
+
+def _expand_compound(content: str, category: str) -> list[dict]:
+    if " and " not in content:
+        return [{"content": content, "category": category}]
+    parts = [p.strip() for p in content.split(" and ") if p.strip()]
+    if len(parts) < 2:
+        return [{"content": content, "category": category}]
+    head = parts[0]
+    if " " not in head:
+        return [{"content": content, "category": category}]
+    verb = head.split(" ")[0]
+    tail = head[len(verb) :].strip()
+    expanded = [{"content": head, "category": category}]
+    for part in parts[1:]:
+        if part.startswith(verb + " "):
+            expanded.append({"content": part, "category": category})
+        else:
+            expanded.append({"content": f"{verb} {part}", "category": category})
+    if tail and len(expanded) > 1:
+        return expanded
+    return [{"content": content, "category": category}]
+
+
+def _is_compact_fact(content: str, max_words: int = 12, min_words: int = 2) -> bool:
+    words = content.split()
+    return min_words <= len(words) <= max_words
 
 
 def _normalize_label(text: str, max_words: int = 4) -> str:

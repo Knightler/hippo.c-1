@@ -58,6 +58,7 @@ class MemoryClient:
                 return str(row[0]) if row else prompt.id
 
     def upsert_label(self, name: str, kind: str, category: str, embedding: list[float]) -> Label:
+        name = name.strip() or "general"
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(
