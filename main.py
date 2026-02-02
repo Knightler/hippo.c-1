@@ -38,37 +38,61 @@ def _print_json(item: object) -> None:
 
 
 def _encode(texts: list[str], role: Role) -> None:
-    prompts = [Prompt(text=t, role=role) for t in texts]
-    engine = EncodeEngine()
-    engine.process(prompts)
+    try:
+        prompts = [Prompt(text=t, role=role) for t in texts]
+        engine = EncodeEngine()
+        engine.process(prompts)
+    except Exception as exc:
+        print(f"encode failed: {exc}")
 
 
 def _labels(limit: int) -> None:
-    client = MemoryClient()
-    for label in client.list_labels(limit=limit):
-        _print_json(
-            {
-                "id": label.id,
-                "name": label.name,
-                "kind": label.kind,
-                "category": label.category,
-                "usage_count": label.usage_count,
-                "updated_at": label.updated_at,
-                "created_at": label.created_at,
-            }
-        )
+    client = None
+    try:
+        client = MemoryClient()
+        for label in client.list_labels(limit=limit):
+            _print_json(
+                {
+                    "id": label.id,
+                    "name": label.name,
+                    "kind": label.kind,
+                    "category": label.category,
+                    "usage_count": label.usage_count,
+                    "updated_at": label.updated_at,
+                    "created_at": label.created_at,
+                }
+            )
+    except Exception as exc:
+        print(f"inspect labels failed: {exc}")
+    finally:
+        if client:
+            client.close()
 
 
 def _facts_latest(limit: int) -> None:
-    client = MemoryClient()
-    for fact in client.list_latest_facts(limit=limit):
-        _print_json(fact)
+    client = None
+    try:
+        client = MemoryClient()
+        for fact in client.list_latest_facts(limit=limit):
+            _print_json(fact)
+    except Exception as exc:
+        print(f"inspect facts failed: {exc}")
+    finally:
+        if client:
+            client.close()
 
 
 def _facts_by_label(label: str, limit: int) -> None:
-    client = MemoryClient()
-    for fact in client.list_facts_by_label(label, limit=limit):
-        _print_json(fact)
+    client = None
+    try:
+        client = MemoryClient()
+        for fact in client.list_facts_by_label(label, limit=limit):
+            _print_json(fact)
+    except Exception as exc:
+        print(f"inspect facts failed: {exc}")
+    finally:
+        if client:
+            client.close()
 
 
 def _show_logs(limit: int) -> None:
@@ -139,7 +163,13 @@ def _watch_memory(
     interval: float,
     initial: bool,
 ) -> None:
-    client = MemoryClient()
+    client = None
+    last_error = ""
+    try:
+        client = MemoryClient()
+    except Exception as exc:
+        print(f"watch failed: {exc}")
+        return
     seen_facts: set[tuple[str, object]] = set()
     seen_labels: set[tuple[str, object]] = set()
     seen_patterns: set[tuple[str, object]] = set()
@@ -171,37 +201,51 @@ def _watch_memory(
                 if initial:
                     _print_json(pattern)
 
-    load_initial()
-    while True:
-        if watch_facts:
-            for fact in client.list_latest_facts(limit=200):
-                key = (fact["id"], fact["last_seen_at"])
-                if key not in seen_facts:
-                    seen_facts.add(key)
-                    _print_json(fact)
-        if watch_labels:
-            for label in client.list_labels(limit=200):
-                key = (label.id, label.updated_at)
-                if key not in seen_labels:
-                    seen_labels.add(key)
-                    _print_json(
-                        {
-                            "id": label.id,
-                            "name": label.name,
-                            "kind": label.kind,
-                            "category": label.category,
-                            "usage_count": label.usage_count,
-                            "updated_at": label.updated_at,
-                            "created_at": label.created_at,
-                        }
-                    )
-        if watch_patterns:
-            for pattern in client.list_patterns(limit=200):
-                key = (pattern["id"], pattern["updated_at"])
-                if key not in seen_patterns:
-                    seen_patterns.add(key)
-                    _print_json(pattern)
-        time.sleep(interval)
+    try:
+        load_initial()
+        while True:
+            try:
+                if watch_facts:
+                    for fact in client.list_latest_facts(limit=200):
+                        key = (fact["id"], fact["last_seen_at"])
+                        if key not in seen_facts:
+                            seen_facts.add(key)
+                            _print_json(fact)
+                if watch_labels:
+                    for label in client.list_labels(limit=200):
+                        key = (label.id, label.updated_at)
+                        if key not in seen_labels:
+                            seen_labels.add(key)
+                            _print_json(
+                                {
+                                    "id": label.id,
+                                    "name": label.name,
+                                    "kind": label.kind,
+                                    "category": label.category,
+                                    "usage_count": label.usage_count,
+                                    "updated_at": label.updated_at,
+                                    "created_at": label.created_at,
+                                }
+                            )
+                if watch_patterns:
+                    for pattern in client.list_patterns(limit=200):
+                        key = (pattern["id"], pattern["updated_at"])
+                        if key not in seen_patterns:
+                            seen_patterns.add(key)
+                            _print_json(pattern)
+                if last_error:
+                    last_error = ""
+            except Exception as exc:
+                message = f"watch error: {exc}"
+                if message != last_error:
+                    print(message)
+                    last_error = message
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print("watch stopped")
+    finally:
+        if client:
+            client.close()
 
 
 def main() -> None:

@@ -15,13 +15,16 @@ class MemoryClient:
         self.dsn = os.getenv(dsn_env, "")
         if not self.dsn:
             raise ValueError("SUPABASE_DATABASE_URL is not set")
-        self.pool = ConnectionPool(self.dsn, min_size=1, max_size=5, timeout=10)
+        self.pool = ConnectionPool(self.dsn, min_size=0, max_size=5, timeout=10)
 
     @contextmanager
     def _connect(self):
         with self.pool.connection() as conn:
             register_vector(conn)
             yield conn
+
+    def close(self) -> None:
+        self.pool.close()
 
     def ping(self) -> bool:
         with self._connect() as conn:
