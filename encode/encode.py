@@ -187,9 +187,12 @@ def _semantic_extract_clause(clause: str) -> list[dict]:
     if not text:
         return []
     lowered = text.lower()
+    lowered = lowered.replace("i'm", "i am").replace("im", "i am")
     patterns = [
         (r"^i\s+am\s+(\d{1,3})\b", "identity", "age is {0}", "fixed"),
         (r"^i\s+am\s+(?:a|an)\s+(.+)$", "identity", "is {0}", "fixed"),
+        (r"^i\s+am\s+always\s+(.+)$", "habit", "always {0}", "object"),
+        (r"^i\s+always\s+(.+)$", "habit", "always {0}", "object"),
         (r"^i\s+feel\s+(.+)$", "emotion", "feels {0}", "fixed"),
         (r"^i\s+like\s+(.+)$", "preference", "likes {0}", "object"),
         (r"^i\s+love\s+(.+)$", "preference", "likes {0}", "object"),
