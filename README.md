@@ -27,17 +27,17 @@ python -m pip install -e .
 4) Run the interactive prompt:
 
 ```bash
-python main.py chat
+./hippo chat
 ```
 
 5) Watch live logs:
 
 ```bash
-python main.py logs --follow
+./hippo logs --follow
 ```
 
 6) Watch live memory changes:
 
 ```bash
-python main.py watch
+./hippo watch
 ```

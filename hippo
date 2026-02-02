@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ ! -x ".venv/bin/python" ]; then
+  echo "missing .venv/bin/python"
+  echo "run: python -m venv .venv && source .venv/bin/activate && python -m pip install -e ."
+  exit 1
+fi
+
+exec .venv/bin/python main.py "$@"
