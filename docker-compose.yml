@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16
+    container_name: hippo-db
+    environment:
+      POSTGRES_USER: hippo
+      POSTGRES_PASSWORD: hippo
+      POSTGRES_DB: hippo
+    ports:
+      - "5432:5432"
+    volumes:
+      - hippo_db:/var/lib/postgresql/data
+      - ./:/app
+
+volumes:
+  hippo_db:

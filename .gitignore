@@ -1,3 +1,6 @@
 .opencode
 .venv
 __pycache__
+.env
+.hippo.log
+*.egg-info
