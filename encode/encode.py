@@ -296,7 +296,16 @@ def _normalize_llm_facts(items: list[dict]) -> list[dict]:
             label = str(item.get("label", "")).strip().lower()
         if not content or not _is_compact_fact(content):
             continue
-        if not label:
+        if not label or label in {
+            "general",
+            "fact",
+            "preference",
+            "positive",
+            "negative",
+            "emotion",
+            "goal",
+            "identity",
+        }:
             label = _label_from_content(content) or "general"
         normalized.append(
             {
