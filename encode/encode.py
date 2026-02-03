@@ -174,8 +174,13 @@ def _derive_label(item: dict, fallback: str | None = None) -> str:
 
 
 def _normalize_fact(content: str, max_words: int = 16, min_words: int = 2) -> str | None:
-    text = content.strip().lower()
+    raw = content.strip()
+    if "?" in raw:
+        return None
+    text = raw.lower()
     if not text:
+        return None
+    if _is_noise_text(text):
         return None
     text = re.split(r"\s+(?:but|because|so|which|that)\s+", text)[0]
     text = text.strip(" ,;:\t\n\r")
@@ -195,6 +200,8 @@ def _semantic_extract_clause(clause: str) -> list[dict]:
     if not text:
         return []
     lowered = text.lower()
+    if _is_noise_text(lowered):
+        return []
     lowered = lowered.replace("i'm", "i am").replace("im", "i am")
     patterns = [
         (r"^i\s+am\s+(\d{1,3})\b", "identity", "age is {0}", "fixed"),
@@ -284,6 +291,28 @@ def _label_from_content(content: str) -> str | None:
     if len(parts) == 2:
         return _normalize_label(parts[1])
     return None
+
+
+def _is_noise_text(text: str) -> bool:
+    text = text.strip()
+    if not text:
+        return True
+    if re.match(r"^(what|why|how|when|where|who)\b", text):
+        return True
+    if text.startswith(
+        (
+            "what do you think",
+            "do you think",
+            "can you",
+            "could you",
+            "would you",
+            "should we",
+            "should i",
+            "tell me",
+        )
+    ):
+        return True
+    return False
 
 
 def _normalize_llm_facts(items: list[dict]) -> list[dict]:
