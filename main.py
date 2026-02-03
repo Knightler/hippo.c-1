@@ -433,8 +433,14 @@ def main() -> None:
                     "likes do you think%",
                 ]
                 deleted = client.delete_facts_like(patterns)
+                deleted_labels = client.delete_labels_like([
+                    "what do you think%",
+                    "do you think%",
+                    "tell me%",
+                ])
                 client.close()
                 print(f"deleted facts: {deleted}")
+                print(f"deleted labels: {deleted_labels}")
             except Exception as exc:
                 if _handle_missing_dep(exc):
                     return

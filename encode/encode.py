@@ -180,7 +180,7 @@ def _normalize_fact(content: str, max_words: int = 16, min_words: int = 2) -> st
     text = raw.lower()
     if not text:
         return None
-    if _is_noise_text(text):
+    if _is_noise_text(text) or _contains_noise_phrase(text):
         return None
     text = re.split(r"\s+(?:but|because|so|which|that)\s+", text)[0]
     text = text.strip(" ,;:\t\n\r")
@@ -200,7 +200,7 @@ def _semantic_extract_clause(clause: str) -> list[dict]:
     if not text:
         return []
     lowered = text.lower()
-    if _is_noise_text(lowered):
+    if _is_noise_text(lowered) or _contains_noise_phrase(lowered):
         return []
     lowered = lowered.replace("i'm", "i am").replace("im", "i am")
     patterns = [
@@ -313,6 +313,20 @@ def _is_noise_text(text: str) -> bool:
     ):
         return True
     return False
+
+
+def _contains_noise_phrase(text: str) -> bool:
+    phrases = [
+        "what do you think",
+        "do you think",
+        "can you",
+        "could you",
+        "would you",
+        "should we",
+        "should i",
+        "tell me",
+    ]
+    return any(p in text for p in phrases)
 
 
 def _normalize_llm_facts(items: list[dict]) -> list[dict]:

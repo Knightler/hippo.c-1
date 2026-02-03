@@ -408,6 +408,20 @@ class MemoryClient:
                 )
                 return cur.rowcount
 
+    def delete_labels_like(self, patterns: list[str]) -> int:
+        if not patterns:
+            return 0
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    delete from labels
+                    where name ilike any (%s)
+                    """,
+                    (patterns,),
+                )
+                return cur.rowcount
+
     def upsert_learned_pattern(
         self,
         signature: str,
