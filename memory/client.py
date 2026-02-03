@@ -394,6 +394,20 @@ class MemoryClient:
                     (1 if success else 0, regex),
                 )
 
+    def delete_facts_like(self, patterns: list[str]) -> int:
+        if not patterns:
+            return 0
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    delete from facts
+                    where content ilike any (%s)
+                    """,
+                    (patterns,),
+                )
+                return cur.rowcount
+
     def upsert_learned_pattern(
         self,
         signature: str,

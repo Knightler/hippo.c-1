@@ -346,6 +346,9 @@ def main() -> None:
     logs_parser.add_argument("--limit", type=int, default=200)
     logs_parser.add_argument("--follow", action="store_true")
 
+    cleanup_parser = sub.add_parser("cleanup")
+    cleanup_parser.add_argument("--noise", action="store_true")
+
     watch_parser = sub.add_parser("watch")
     watch_parser.add_argument("--facts", action="store_true")
     watch_parser.add_argument("--labels", action="store_true")
@@ -410,6 +413,32 @@ def main() -> None:
             _follow_logs(limit=args.limit)
         else:
             _show_logs(limit=args.limit)
+        return
+
+    if args.cmd == "cleanup":
+        if args.noise:
+            try:
+                from memory import MemoryClient
+                client = MemoryClient()
+                patterns = [
+                    "what do you think%",
+                    "do you think%",
+                    "can you%",
+                    "could you%",
+                    "would you%",
+                    "should we%",
+                    "should i%",
+                    "tell me%",
+                ]
+                deleted = client.delete_facts_like(patterns)
+                client.close()
+                print(f"deleted facts: {deleted}")
+            except Exception as exc:
+                if _handle_missing_dep(exc):
+                    return
+                print(f"cleanup failed: {exc}")
+            return
+        print("cleanup requires --noise")
         return
 
     if args.cmd == "watch":
