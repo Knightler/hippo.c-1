@@ -429,6 +429,8 @@ def main() -> None:
                     "should we%",
                     "should i%",
                     "tell me%",
+                    "likes what do you think%",
+                    "likes do you think%",
                 ]
                 deleted = client.delete_facts_like(patterns)
                 client.close()
