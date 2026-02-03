@@ -205,6 +205,7 @@ def _semantic_extract_clause(clause: str) -> list[dict]:
         (r"^i\s+(?:really\s+)?loved\s+(.+)$", "preference", "likes {0}", "object"),
         (r"^i\s+(?:really\s+)?enjoy\s+(.+)$", "preference", "likes {0}", "object"),
         (r"^i\s+(?:really\s+)?prefer\s+(.+)$", "preference", "prefers {0}", "object"),
+        (r"^i\s+(?:really\s+)?admire\s+(.+)$", "preference", "admires {0}", "object"),
         (r"^i\s+(?:really\s+)?dislike\s+(.+)$", "preference", "dislikes {0}", "object"),
         (r"^i\s+(?:really\s+)?hate\s+(.+)$", "preference", "dislikes {0}", "object"),
         (r"^i\s+(?:really\s+)?hated\s+(.+)$", "preference", "dislikes {0}", "object"),
@@ -265,6 +266,7 @@ def _split_list_items(text: str) -> list[str]:
 def _label_from_content(content: str) -> str | None:
     patterns = [
         r"^(?:likes|dislikes|prefers)\s+(.+)$",
+        r"^(?:admires)\s+(.+)$",
         r"^(?:wants to|needs to)\s+(.+)$",
         r"^(?:feels)\s+(.+)$",
         r"^(?:lives in|from|works in|writes in)\s+(.+)$",
@@ -276,6 +278,9 @@ def _label_from_content(content: str) -> str | None:
         if match:
             value = match.group(1)
             return _normalize_label(value)
+    parts = content.split(" ", 1)
+    if len(parts) == 2:
+        return _normalize_label(parts[1])
     return None
 
 
