@@ -139,13 +139,15 @@ def _split_clauses(text: str) -> list[str]:
         if not chunk:
             continue
         parts = re.split(
-            r"\s+(?:and|but|because|so|which|that)\s+(?=(?:i|my|i\s+am|i\s+was|i\s+have|i\s+do|i'm|im)\b)",
+            r"\s+(?:and|but|because|so|which|that)\s+(?=(?:i|my|i\s+am|i\s+was|i\s+have|i\s+do|i'm|im|want\s+to|need\s+to|plan\s+to|aim\s+to)\b)",
             chunk,
             flags=re.IGNORECASE,
         )
         for part in parts:
             part = part.strip(" ,;:\t\n\r")
             if part:
+                if re.match(r"^(?:want|need|plan|aim)\s+to\b", part, flags=re.IGNORECASE):
+                    part = "i " + part
                 clauses.append(part)
     return clauses
 
