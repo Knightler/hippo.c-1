@@ -110,11 +110,32 @@ def _user_prompt(text: str, context: list[dict]) -> str:
 
 
 def _safe_json_loads(raw: str) -> object:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        log("error", "llm_parse_failed", error=type(exc).__name__, message=str(exc))
-        return []
+    cleaned = raw.strip()
+    if cleaned.startswith("```"):
+        parts = cleaned.split("```")
+        if len(parts) >= 2:
+            cleaned = parts[1].strip()
+    for candidate in (cleaned, _extract_json_block(cleaned)):
+        if not candidate:
+            continue
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+    log("error", "llm_parse_failed", error="JSONDecodeError", message="unable to parse")
+    return []
+
+
+def _extract_json_block(text: str) -> str:
+    start = min([i for i in [text.find("["), text.find("{")] if i != -1] or [-1])
+    if start == -1:
+        return ""
+    end_bracket = text.rfind("]")
+    end_brace = text.rfind("}")
+    end = max(end_bracket, end_brace)
+    if end == -1 or end <= start:
+        return ""
+    return text[start : end + 1]
 
 
 def _validate_items(data: object) -> list[dict]:
