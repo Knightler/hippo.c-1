@@ -42,14 +42,22 @@ python -m pip install -e .
 ./hippo watch
 ```
 
-## Optional LLM extraction (DeepSeek)
+## Optional LLM extraction
 
-Set these in `.env` to enable LLM extraction:
+### OpenRouter (recommended)
+```bash
+OPENROUTER_API_KEY=your_key
+OPENROUTER_API_BASE=https://openrouter.ai/api/v1
+OPENROUTER_MODEL=google/gemini-2.0-flash-001
+OPENROUTER_APP_URL=http://localhost
+OPENROUTER_APP_NAME=hippo.c-1
+```
 
+### DeepSeek
 ```bash
 DEEPSEEK_API_KEY=your_key
 DEEPSEEK_API_BASE=https://api.deepseek.com/v1
 DEEPSEEK_MODEL=deepseek-chat
 ```
 
-The pipeline will use the LLM extractor automatically when the key is set.
+The extractor uses OpenRouter if `OPENROUTER_API_KEY` is set; otherwise it falls back to DeepSeek.

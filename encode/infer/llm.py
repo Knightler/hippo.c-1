@@ -17,16 +17,57 @@ class LLMExtractor:
         base_env: str = "DEEPSEEK_API_BASE",
         model_env: str = "DEEPSEEK_MODEL",
     ):
+        self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+        self.openrouter_base = os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
+        self.openrouter_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
+        self.openrouter_app_url = os.getenv("OPENROUTER_APP_URL", "http://localhost")
+        self.openrouter_app_name = os.getenv("OPENROUTER_APP_NAME", "hippo.c-1")
+
         self.api_key = os.getenv(api_key_env, "")
         self.base = os.getenv(base_env, "https://api.deepseek.com/v1")
         self.model = os.getenv(model_env, "deepseek-chat")
 
     def enabled(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.openrouter_key or self.api_key)
 
     def extract(self, text: str, context: list[dict]) -> list[dict]:
         if not self.enabled():
             return []
+        if self.openrouter_key:
+            return self._extract_openrouter(text, context)
+        return self._extract_deepseek(text, context)
+
+    def _extract_openrouter(self, text: str, context: list[dict]) -> list[dict]:
+        payload = {
+            "model": self.openrouter_model,
+            "messages": [
+                {"role": "system", "content": _system_prompt()},
+                {"role": "user", "content": _user_prompt(text, context)},
+            ],
+            "temperature": 0.1,
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            f"{self.openrouter_base}/chat/completions",
+            data=data,
+            headers={
+                "Authorization": f"Bearer {self.openrouter_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": self.openrouter_app_url,
+                "X-Title": self.openrouter_app_name,
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            content = body["choices"][0]["message"]["content"]
+            return _validate_items(_safe_json_loads(content))
+        except Exception as exc:
+            log("error", "llm_extract_failed", error=type(exc).__name__, message=str(exc))
+            return []
+
+    def _extract_deepseek(self, text: str, context: list[dict]) -> list[dict]:
         payload = {
             "model": self.model,
             "messages": [
@@ -59,6 +100,7 @@ def _system_prompt() -> str:
     return (
         "Extract user memory facts from the message. "
         "Return JSON array with fields: content, category, label. "
+        "Use compact normalized facts like 'likes jazz' or 'lives in Berlin'. "
         "Only include meaningful, compact facts."
     )
 

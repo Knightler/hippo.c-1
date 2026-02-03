@@ -41,6 +41,7 @@ class EncodeEngine:
             context = _build_context(candidates, self.memory)
             llm_facts = self.llm.extract(prompt.text, context)
 
+        llm_facts = _normalize_llm_facts(llm_facts)
         extracted = _dedupe(cheap + llm_facts)
         updates = self.updater.apply(prompt, extracted, self.memory)
 
@@ -275,6 +276,30 @@ def _label_from_content(content: str) -> str | None:
             value = match.group(1)
             return _normalize_label(value)
     return None
+
+
+def _normalize_llm_facts(items: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        content = _normalize_fact(str(item.get("content", "")))
+        if not content or not _is_compact_fact(content):
+            continue
+        category = str(item.get("category", "fact")) or "fact"
+        label = str(item.get("label", "")).strip().lower()
+        if not label:
+            label = _label_from_content(content) or "general"
+        normalized.append(
+            {
+                "content": content,
+                "category": category,
+                "label": label,
+                "confidence": float(item.get("confidence", 0.6)),
+                "source": "llm",
+            }
+        )
+    return normalized
 
 
 def _normalize_label(text: str, max_words: int = 4) -> str:
