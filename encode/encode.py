@@ -37,9 +37,10 @@ class EncodeEngine:
         cheap = self._cheap_extract(prompt)
         llm_facts = []
 
-        if triage_result.should_infer and self.llm.enabled():
+        if self.llm.enabled() and (triage_result.should_infer or not cheap):
             context = _build_context(candidates, self.memory)
             llm_facts = self.llm.extract(prompt.text, context)
+            log("info", "llm_extract", count=len(llm_facts))
 
         llm_facts = _normalize_llm_facts(llm_facts)
         extracted = _dedupe(cheap + llm_facts)
@@ -283,11 +284,18 @@ def _normalize_llm_facts(items: list[dict]) -> list[dict]:
     for item in items:
         if not isinstance(item, dict):
             continue
-        content = _normalize_fact(str(item.get("content", "")))
+        raw_content = str(item.get("content", ""))
+        semantic = _semantic_extract_clause(raw_content)
+        if semantic:
+            content = _normalize_fact(semantic[0].get("content", ""))
+            category = semantic[0].get("category", "fact")
+            label = _derive_label(semantic[0])
+        else:
+            content = _normalize_fact(raw_content)
+            category = str(item.get("category", "fact")) or "fact"
+            label = str(item.get("label", "")).strip().lower()
         if not content or not _is_compact_fact(content):
             continue
-        category = str(item.get("category", "fact")) or "fact"
-        label = str(item.get("label", "")).strip().lower()
         if not label:
             label = _label_from_content(content) or "general"
         normalized.append(
