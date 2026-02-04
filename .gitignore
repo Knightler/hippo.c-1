@@ -1,7 +1,6 @@
-.opencode
-.venv
-__pycache__
+.opencode/
+.venv/
+__pycache__/
 .env
 .hippo.log
 *.egg-info
-.opencode/plans
