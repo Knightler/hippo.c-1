@@ -1,24 +1,19 @@
 from typing import Iterable
 
+from core import log
 from encode.infer import LLMExtractor
 from encode.match import HashEmbedder, retrieve_candidates
-from encode.models import MemoryUpdate, Prompt
-from encode.triage import PatternLibrary, triage
-from encode.update import MemoryUpdater
+from encode.models import Fact, MemoryUpdate, Prompt
 from memory import MemoryClient
-from core import log
-import re
 
 
 class EncodeEngine:
-    """Selective encode engine with incremental learning."""
+    """LLM-first encode engine with two-layer decisions."""
 
     def __init__(self):
         self.memory = MemoryClient()
-        self.patterns = PatternLibrary(self.memory)
         self.embedder = HashEmbedder()
         self.llm = LLMExtractor()
-        self.updater = MemoryUpdater(self.embedder, self.memory)
 
     def process(self, prompts: Iterable[Prompt]) -> list[MemoryUpdate]:
         updates: list[MemoryUpdate] = []
@@ -31,74 +26,83 @@ class EncodeEngine:
         return updates
 
     def _process_prompt(self, prompt: Prompt) -> list[MemoryUpdate]:
-        triage_result = triage(prompt, self.patterns)
-        candidates = retrieve_candidates(prompt.text, self.memory, self.embedder)
+        if not self.llm.enabled():
+            log("error", "llm_disabled")
+            return []
 
-        cheap = self._cheap_extract(prompt)
-        llm_facts = []
-
-        if self.llm.enabled() and (triage_result.should_infer or not cheap):
-            context = _build_context(candidates, self.memory)
-            llm_facts = self.llm.extract(prompt.text, context)
-            log("info", "llm_extract", count=len(llm_facts))
+        context = _build_context(prompt.text, self.memory, self.embedder)
+        llm_facts = self.llm.extract(prompt.text, context)
+        log("info", "llm_extract", count=len(llm_facts))
 
         llm_facts = _normalize_llm_facts(llm_facts)
-        extracted = _dedupe(cheap + llm_facts)
-        updates = self.updater.apply(prompt, extracted, self.memory)
+        llm_facts = _dedupe(llm_facts)
+        if not llm_facts:
+            return []
 
-        self._learn_patterns(prompt.text, extracted)
+        decision_context = _build_fact_context(llm_facts, self.memory, self.embedder)
+        decisions = self.llm.decide(prompt.text, llm_facts, decision_context)
+        log("info", "llm_decide", count=len(decisions))
 
-        for item in extracted:
-            if item.get("pattern"):
-                self.patterns.record(item["pattern"], success=True)
-
+        updates = _apply_decisions(self.memory, self.embedder, prompt, llm_facts, decisions)
+        _learn_patterns(self.memory, llm_facts)
         return updates
 
-    def _cheap_extract(self, prompt: Prompt) -> list[dict]:
-        items: list[dict] = []
-        for clause in _split_clauses(prompt.text):
-            items.extend(_semantic_extract_clause(clause))
-            items.extend(self.patterns.match(clause))
-        normalized_items: list[dict] = []
-        for item in items:
-            normalized = _normalize_fact(item.get("content", ""))
-            if not normalized:
-                continue
-            base_label = _derive_label(item)
-            for fact in _expand_compound(normalized, item.get("category", "fact")):
-                if not _is_compact_fact(fact["content"]):
-                    continue
-                fact["source"] = item.get("source", "pattern")
-                fact["pattern"] = item.get("pattern")
-                fact["confidence"] = item.get("confidence", 0.45)
-                fact["label"] = _derive_label(fact, fallback=base_label)
-                normalized_items.append(fact)
-        return normalized_items
 
-    def _learn_patterns(self, text: str, facts: list[dict]) -> None:
-        sentences = _split_sentences(text)
-        for sentence in sentences:
-            candidate = _prompt_pattern_candidate(sentence)
-            if candidate:
-                self.memory.upsert_learned_pattern(
-                    signature=candidate["signature"],
-                    template=candidate["template"],
-                    category=candidate["category"],
-                    confidence=0.2,
-                    success=True,
-                    metadata={"source": "prompt", "example": sentence},
-                )
-        for fact in facts:
-            candidate = _fact_pattern_candidate(fact)
-            if candidate:
-                self.memory.upsert_learned_pattern(
-                    signature=candidate["signature"],
-                    template=candidate["template"],
-                    category=candidate["category"],
-                    confidence=0.5,
-                    success=True,
-                    metadata={"source": "fact", "example": fact.get("content", "")},
-                )
+def _build_context(text: str, memory: MemoryClient, embedder: HashEmbedder) -> list[dict]:
+    candidates = retrieve_candidates(text, memory, embedder)
+    context = []
+    for cand in candidates:
+        facts = memory.get_facts_by_label(cand.label_id)
+        context.append(
+            {
+                "label": cand.label_name,
+                "facts": [f.content for f in facts[:3]],
+            }
+        )
+    return context
+
+
+def _build_fact_context(
+    facts: list[dict], memory: MemoryClient, embedder: HashEmbedder
+) -> list[dict]:
+    context = []
+    for fact in facts:
+        candidates = retrieve_candidates(fact.get("content", ""), memory, embedder)
+        existing: list[str] = []
+        for cand in candidates:
+            for row in memory.get_facts_by_label(cand.label_id, limit=3):
+                existing.append(row.content)
+        context.append(
+            {
+                "content": fact.get("content"),
+                "label": fact.get("label"),
+                "category": fact.get("category"),
+                "existing": existing[:5],
+            }
+        )
+    return context
+
+
+def _normalize_llm_facts(items: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content", "")).strip().lower()
+        category = str(item.get("category", "fact")).strip().lower() or "fact"
+        label = str(item.get("label", "")).strip().lower()
+        if not content or not label:
+            continue
+        normalized.append(
+            {
+                "content": content,
+                "category": category,
+                "label": label,
+                "confidence": float(item.get("confidence", 0.6)),
+                "source": "llm",
+            }
+        )
+    return normalized
 
 
 def _dedupe(items: list[dict]) -> list[dict]:
@@ -113,299 +117,77 @@ def _dedupe(items: list[dict]) -> list[dict]:
     return result
 
 
-def _build_context(candidates, memory: MemoryClient) -> list[dict]:
-    context = []
-    for cand in candidates:
-        facts = memory.get_facts_by_label(cand.label_id)
-        context.append(
-            {
-                "label": cand.label_name,
-                "facts": [f.content for f in facts[:3]],
-            }
-        )
-    return context
-
-
-def _split_sentences(text: str) -> list[str]:
-    parts = re.split(r"[.!?]+", text)
-    return [p.strip() for p in parts if p.strip()]
-
-
-def _split_clauses(text: str) -> list[str]:
-    chunks = re.split(r"[.!?]+", text)
-    clauses: list[str] = []
-    for chunk in chunks:
-        chunk = chunk.strip()
-        if not chunk:
+def _apply_decisions(
+    memory: MemoryClient,
+    embedder: HashEmbedder,
+    prompt: Prompt,
+    facts: list[dict],
+    decisions: list[dict],
+) -> list[MemoryUpdate]:
+    updates: list[MemoryUpdate] = []
+    decisions_map = {d.get("content"): d for d in decisions if isinstance(d, dict)}
+    for fact in facts:
+        content = fact.get("content")
+        decision = decisions_map.get(content, {})
+        action = decision.get("action", "skip")
+        if action == "skip":
             continue
-        parts = re.split(
-            r"\s+(?:and|but|because|so|which|that)\s+(?=(?:i|my|i\s+am|i\s+was|i\s+have|i\s+do|i'm|im|want\s+to|need\s+to|plan\s+to|aim\s+to)\b)",
-            chunk,
-            flags=re.IGNORECASE,
+        label = memory.upsert_label(
+            name=fact.get("label", "general"),
+            kind="topic",
+            category="topic",
+            embedding=embedder.embed(fact.get("label", "general")),
         )
-        for part in parts:
-            part = part.strip(" ,;:\t\n\r")
-            if part:
-                if re.match(r"^(?:want|need|plan|aim)\s+to\b", part, flags=re.IGNORECASE):
-                    part = "i " + part
-                clauses.append(part)
-    return clauses
-
-
-def _derive_label(item: dict, fallback: str | None = None) -> str:
-    mode = item.get("label_mode", "group")
-    groups = item.get("groups", [])
-    category = item.get("category", "")
-    if mode == "fixed":
-        return category or "general"
-    if mode == "subject" and groups:
-        return _normalize_label(groups[0])
-    if mode == "object" and groups:
-        return _normalize_label(groups[0])
-    if groups:
-        return _normalize_label(groups[0])
-    content = str(item.get("content", "")).lower().strip()
-    label = _label_from_content(content)
-    if label:
-        return label
-    if fallback:
-        return fallback
-    return "general"
-
-
-def _normalize_fact(content: str, max_words: int = 16, min_words: int = 2) -> str | None:
-    raw = content.strip()
-    if "?" in raw:
-        return None
-    text = raw.lower()
-    if not text:
-        return None
-    if _is_noise_text(text) or _contains_noise_phrase(text):
-        return None
-    text = re.split(r"\s+(?:but|because|so|which|that)\s+", text)[0]
-    text = text.strip(" ,;:\t\n\r")
-    text = re.sub(r"\b(really|just|actually|basically|literally)\b", "", text).strip()
-    text = re.sub(r"\s+", " ", text)
-    words = text.split()
-    if len(words) < min_words:
-        return None
-    if len(words) > max_words:
-        words = words[:max_words]
-        text = " ".join(words)
-    return text
-
-
-def _semantic_extract_clause(clause: str) -> list[dict]:
-    text = clause.strip()
-    if not text:
-        return []
-    lowered = text.lower()
-    if _is_noise_text(lowered) or _contains_noise_phrase(lowered):
-        return []
-    lowered = lowered.replace("i'm", "i am").replace("im", "i am")
-    patterns = [
-        (r"^i\s+am\s+(\d{1,3})\b", "identity", "age is {0}", "fixed"),
-        (r"^i\s+am\s+(?:a|an)\s+(.+)$", "identity", "is {0}", "fixed"),
-        (r"^i\s+am\s+always\s+(.+)$", "habit", "always {0}", "object"),
-        (r"^i\s+always\s+(.+)$", "habit", "always {0}", "object"),
-        (r"^i\s+feel\s+(.+)$", "emotion", "feels {0}", "fixed"),
-        (r"^i\s+(?:really\s+)?like\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+(?:really\s+)?love\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+(?:really\s+)?loved\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+(?:really\s+)?enjoy\s+(.+)$", "preference", "likes {0}", "object"),
-        (r"^i\s+(?:really\s+)?prefer\s+(.+)$", "preference", "prefers {0}", "object"),
-        (r"^i\s+(?:really\s+)?admire\s+(.+)$", "preference", "admires {0}", "object"),
-        (r"^i\s+(?:really\s+)?dislike\s+(.+)$", "preference", "dislikes {0}", "object"),
-        (r"^i\s+(?:really\s+)?hate\s+(.+)$", "preference", "dislikes {0}", "object"),
-        (r"^i\s+(?:really\s+)?hated\s+(.+)$", "preference", "dislikes {0}", "object"),
-        (r"^i\s+want\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
-        (r"^i\s+plan\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
-        (r"^i\s+aim\s+to\s+(.+)$", "goal", "wants to {0}", "object"),
-        (r"^i\s+need\s+to\s+(.+)$", "goal", "needs to {0}", "object"),
-        (r"^i\s+live\s+in\s+(.+)$", "location", "lives in {0}", "object"),
-        (r"^i\s+am\s+from\s+(.+)$", "location", "from {0}", "object"),
-        (r"^i\s+work\s+in\s+(.+)$", "work", "works in {0}", "object"),
-        (r"^i\s+write\s+in\s+(.+)$", "style", "writes in {0}", "object"),
-        (r"^my\s+(.+?)\s+(?:is|are)\s+(.+)$", "relationship", "{0} is {1}", "subject"),
-    ]
-    for pattern, category, template, label_mode in patterns:
-        match = re.match(pattern, lowered)
-        if match:
-            content = template.format(*match.groups())
-            return [
-                {
-                    "content": content,
-                    "category": category,
-                    "confidence": 0.55,
-                    "pattern": pattern,
-                    "groups": list(match.groups()),
-                    "label_mode": label_mode,
-                    "source": "semantic",
-                }
-            ]
-    return []
-
-
-def _expand_compound(content: str, category: str) -> list[dict]:
-    if " " not in content:
-        return [{"content": content, "category": category}]
-    verb, rest = content.split(" ", 1)
-    if not rest:
-        return [{"content": content, "category": category}]
-    items = _split_list_items(rest)
-    if len(items) <= 1:
-        return [{"content": content, "category": category}]
-    expanded = []
-    for item in items:
-        expanded.append({"content": f"{verb} {item}", "category": category})
-    return expanded
-
-
-def _is_compact_fact(content: str, max_words: int = 12, min_words: int = 2) -> bool:
-    words = content.split()
-    return min_words <= len(words) <= max_words
-
-
-def _split_list_items(text: str) -> list[str]:
-    parts = re.split(r",|\s+and\s+", text)
-    items = [p.strip(" ,;:\t\n\r") for p in parts if p.strip(" ,;:\t\n\r")]
-    return items
-
-
-def _label_from_content(content: str) -> str | None:
-    patterns = [
-        r"^(?:likes|dislikes|prefers)\s+(.+)$",
-        r"^(?:admires)\s+(.+)$",
-        r"^(?:wants to|needs to)\s+(.+)$",
-        r"^(?:feels)\s+(.+)$",
-        r"^(?:lives in|from|works in|writes in)\s+(.+)$",
-        r"^(?:age is)\s+(.+)$",
-        r"^(.+?)\s+is\s+(.+)$",
-    ]
-    for pattern in patterns:
-        match = re.match(pattern, content)
-        if match:
-            value = match.group(1)
-            return _normalize_label(value)
-    parts = content.split(" ", 1)
-    if len(parts) == 2:
-        return _normalize_label(parts[1])
-    return None
-
-
-def _is_noise_text(text: str) -> bool:
-    text = text.strip()
-    if not text:
-        return True
-    if re.match(r"^(what|why|how|when|where|who)\b", text):
-        return True
-    if text.startswith(
-        (
-            "what do you think",
-            "do you think",
-            "can you",
-            "could you",
-            "would you",
-            "should we",
-            "should i",
-            "tell me",
+        if action == "reinforce":
+            match = memory.find_best_fact(label.id, embedder.embed(content))
+            if match:
+                memory.reinforce_fact(match.id, boost=0.05)
+                updates.append(
+                    MemoryUpdate(
+                        action="update",
+                        entity="fact",
+                        entity_id=match.id,
+                        confidence=match.confidence,
+                        reason="reinforced",
+                        payload={"content": match.content},
+                    )
+                )
+                continue
+        fact_row = Fact(
+            label_id=label.id,
+            content=content,
+            category=fact.get("category", "fact"),
+            confidence=fact.get("confidence", 0.5),
+            source_role=prompt.role.value,
+            embedding=embedder.embed(content),
+            metadata={"source": fact.get("source", "llm")},
         )
-    ):
-        return True
-    return False
-
-
-def _contains_noise_phrase(text: str) -> bool:
-    phrases = [
-        "what do you think",
-        "do you think",
-        "can you",
-        "could you",
-        "would you",
-        "should we",
-        "should i",
-        "tell me",
-    ]
-    return any(p in text for p in phrases)
-
-
-def _normalize_llm_facts(items: list[dict]) -> list[dict]:
-    normalized: list[dict] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        raw_content = str(item.get("content", ""))
-        semantic = _semantic_extract_clause(raw_content)
-        if semantic:
-            content = _normalize_fact(semantic[0].get("content", ""))
-            category = semantic[0].get("category", "fact")
-            label = _derive_label(semantic[0])
-        else:
-            content = _normalize_fact(raw_content)
-            category = str(item.get("category", "fact")) or "fact"
-            label = str(item.get("label", "")).strip().lower()
-        if not content or not _is_compact_fact(content):
-            continue
-        if not label or label in {
-            "general",
-            "fact",
-            "preference",
-            "positive",
-            "negative",
-            "emotion",
-            "goal",
-            "identity",
-        }:
-            label = _label_from_content(content) or "general"
-        normalized.append(
-            {
-                "content": content,
-                "category": category,
-                "label": label,
-                "confidence": float(item.get("confidence", 0.6)),
-                "source": "llm",
-            }
+        memory.insert_fact(fact_row)
+        updates.append(
+            MemoryUpdate(
+                action="create",
+                entity="fact",
+                entity_id=fact_row.id,
+                confidence=fact_row.confidence,
+                reason="llm_create",
+                payload={"content": fact_row.content},
+            )
         )
-    return normalized
+    return updates
 
 
-def _normalize_label(text: str, max_words: int = 4) -> str:
-    tokens = re.findall(r"[a-zA-Z']+", text.lower())
-    if not tokens:
-        return "general"
-    stop = {
-        "i",
-        "my",
-        "the",
-        "a",
-        "an",
-        "to",
-        "of",
-        "in",
-        "on",
-        "for",
-        "with",
-        "and",
-        "but",
-    }
-    cleaned = [t for t in tokens if t not in stop]
-    if not cleaned:
-        cleaned = tokens
-    tail = cleaned[-max_words:]
-    return " ".join(tail)
-
-
-def _prompt_pattern_candidate(sentence: str) -> dict | None:
-    text = sentence.strip().lower()
-    match = re.match(r"^i\s+(\w+)\s+(.+)$", text)
-    if not match:
-        return None
-    verb = match.group(1)
-    if len(verb) < 3:
-        return None
-    template = f"i {verb} {{object}}"
-    signature = f"prompt:{verb}"
-    return {"signature": signature, "template": template, "category": "custom"}
+def _learn_patterns(memory: MemoryClient, facts: list[dict]) -> None:
+    for fact in facts:
+        candidate = _fact_pattern_candidate(fact)
+        if candidate:
+            memory.upsert_learned_pattern(
+                signature=candidate["signature"],
+                template=candidate["template"],
+                category=candidate["category"],
+                confidence=0.5,
+                success=True,
+                metadata={"source": "fact", "example": fact.get("content", "")},
+            )
 
 
 def _fact_pattern_candidate(fact: dict) -> dict | None:

@@ -4,3 +4,4 @@ __pycache__
 .env
 .hippo.log
 *.egg-info
+.opencode/plans
