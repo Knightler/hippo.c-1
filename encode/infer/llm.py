@@ -1,8 +1,22 @@
 import json
 import os
 import urllib.request
+from urllib.parse import urlparse
 
 from core import log
+
+
+_ALLOWED_OPENROUTER_HOSTS = {"openrouter.ai"}
+_ALLOWED_DEEPSEEK_HOSTS = {"api.deepseek.com"}
+
+
+def _validated_api_base(env_name: str, default: str, allowed_hosts: set[str]) -> str:
+    raw = os.getenv(env_name, default).strip() or default
+    parsed = urlparse(raw)
+    if parsed.scheme != "https" or parsed.hostname is None or parsed.hostname not in allowed_hosts:
+        log("error", "llm_invalid_api_base", env=env_name)
+        return default
+    return raw.rstrip("/")
 
 
 class LLMExtractor:
@@ -18,13 +32,17 @@ class LLMExtractor:
         model_env: str = "DEEPSEEK_MODEL",
     ):
         self.openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
-        self.openrouter_base = os.getenv("OPENROUTER_API_BASE", "https://openrouter.ai/api/v1")
+        self.openrouter_base = _validated_api_base(
+            "OPENROUTER_API_BASE",
+            "https://openrouter.ai/api/v1",
+            _ALLOWED_OPENROUTER_HOSTS,
+        )
         self.openrouter_model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-001")
         self.openrouter_app_url = os.getenv("OPENROUTER_APP_URL", "http://localhost")
         self.openrouter_app_name = os.getenv("OPENROUTER_APP_NAME", "hippo.c-1")
 
         self.api_key = os.getenv(api_key_env, "")
-        self.base = os.getenv(base_env, "https://api.deepseek.com/v1")
+        self.base = _validated_api_base(base_env, "https://api.deepseek.com/v1", _ALLOWED_DEEPSEEK_HOSTS)
         self.model = os.getenv(model_env, "deepseek-chat")
 
     def enabled(self) -> bool:

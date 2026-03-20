@@ -1,14 +1,50 @@
 import json
 import os
+import re
 from datetime import datetime, timezone
+from typing import cast
+
+
+_SENSITIVE_KEY_PARTS = (
+    "authorization",
+    "api_key",
+    "apikey",
+    "token",
+    "password",
+    "secret",
+    "dsn",
+)
+_BEARER_VALUE_RE = re.compile(r"^bearer\s+.+", re.IGNORECASE)
+
+
+def _sanitize(value: object) -> object:
+    if isinstance(value, dict):
+        masked: dict[str, object] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            if any(part in key_text.lower() for part in _SENSITIVE_KEY_PARTS):
+                masked[key_text] = "***redacted***"
+            else:
+                masked[key_text] = _sanitize(item)
+        return masked
+    if isinstance(value, list):
+        return [_sanitize(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize(item) for item in value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if _BEARER_VALUE_RE.match(stripped):
+            return "***redacted***"
+    return value
 
 
 def log(level: str, event: str, **fields: object) -> None:
+    sanitized_fields = cast(dict[str, object], _sanitize(fields))
     payload = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "level": level,
         "event": event,
-        **fields,
+        **sanitized_fields,
     }
     line = json.dumps(payload, separators=(",", ":"))
     print(line)
