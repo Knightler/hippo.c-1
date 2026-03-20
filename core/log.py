@@ -1,6 +1,8 @@
 import json
 import os
+import re
 from datetime import datetime, timezone
+from typing import cast
 
 
 _SENSITIVE_KEY_PARTS = (
@@ -12,6 +14,7 @@ _SENSITIVE_KEY_PARTS = (
     "secret",
     "dsn",
 )
+_BEARER_VALUE_RE = re.compile(r"^bearer\s+\S+", re.IGNORECASE)
 
 
 def _sanitize(value: object) -> object:
@@ -30,16 +33,13 @@ def _sanitize(value: object) -> object:
         return tuple(_sanitize(item) for item in value)
     if isinstance(value, str):
         stripped = value.strip()
-        if stripped.lower().startswith("bearer "):
+        if _BEARER_VALUE_RE.match(stripped):
             return "***redacted***"
     return value
 
 
 def _sanitize_fields(fields: dict[str, object]) -> dict[str, object]:
-    sanitized = _sanitize(fields)
-    if isinstance(sanitized, dict):
-        return sanitized
-    return fields
+    return cast(dict[str, object], _sanitize(fields))
 
 
 def log(level: str, event: str, **fields: object) -> None:
