@@ -13,7 +13,7 @@ _ALLOWED_DEEPSEEK_HOSTS = {"api.deepseek.com"}
 def _validated_api_base(env_name: str, default: str, allowed_hosts: set[str]) -> str:
     raw = os.getenv(env_name, default).strip() or default
     parsed = urlparse(raw)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.hostname not in allowed_hosts:
+    if parsed.scheme != "https" or parsed.hostname is None or parsed.hostname not in allowed_hosts:
         log("error", "llm_invalid_api_base", env=env_name)
         return default
     return raw.rstrip("/")
