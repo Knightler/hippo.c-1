@@ -14,7 +14,7 @@ _SENSITIVE_KEY_PARTS = (
     "secret",
     "dsn",
 )
-_BEARER_VALUE_RE = re.compile(r"^bearer\s+\S+", re.IGNORECASE)
+_BEARER_VALUE_RE = re.compile(r"^bearer\s+.+", re.IGNORECASE)
 
 
 def _sanitize(value: object) -> object:
@@ -38,16 +38,13 @@ def _sanitize(value: object) -> object:
     return value
 
 
-def _sanitize_fields(fields: dict[str, object]) -> dict[str, object]:
-    return cast(dict[str, object], _sanitize(fields))
-
-
 def log(level: str, event: str, **fields: object) -> None:
+    sanitized_fields = cast(dict[str, object], _sanitize(fields))
     payload = {
         "ts": datetime.now(timezone.utc).isoformat(),
         "level": level,
         "event": event,
-        **_sanitize_fields(fields),
+        **sanitized_fields,
     }
     line = json.dumps(payload, separators=(",", ":"))
     print(line)
